@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wp-contrib"
+version = "0.1.0"
+description = "Local, human-approved automation for fixing WordPress plugin GitHub issues"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["typer>=0.12,<1", "PyYAML>=6,<7"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+wp-contrib = "wp_contrib.cli:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.hatch.build.targets.wheel]
+packages = ["wp_contrib"]

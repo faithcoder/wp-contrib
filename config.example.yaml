@@ -1,0 +1,14 @@
+workspace_dir: "./workspaces"
+
+github:
+  use_gh_cli: true
+
+agent:
+  provider: "opencode"
+  max_attempts: 2
+
+validation:
+  timeout: 300
+
+workflow:
+  require_human_approval: true
