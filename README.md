@@ -228,6 +228,10 @@ Review the summary one more time. At the confirmation prompt, type `y` only if y
 
 Only after confirmation does the command stage and commit changes, create or reuse your GitHub fork, configure `upstream` and `origin`, push without force, and create a PR against the upstream default branch. The PR description is generated from deterministic state and Git output.
 
+Before creating the PR, `wp-contrib` looks for GitHub pull-request templates in the standard locations: `.github/PULL_REQUEST_TEMPLATE.md`, the repository root, `docs/`, and named Markdown templates under `.github/PULL_REQUEST_TEMPLATE/` or `PULL_REQUEST_TEMPLATE/`. Filename matching is case-insensitive. A standard single template is preferred; when only multiple named templates exist, the first filename in sorted order is used and displayed in the publishing progress.
+
+Template comments, instructions, checklists, and repository-specific sections are preserved. Common What/Why/How/Summary/Changes/Testing and AI-disclosure sections are populated with deterministic workflow information, and issue placeholders such as `Fixes #` or `Closes <!-- #ISSUE-NUMBER -->` are filled with the active issue number. Missing sections are appended without using another AI call. Always read the final PR body on GitHub and complete any project-specific checklist items that require personal confirmation.
+
 ### 7. Check the pull request
 
 Open the URL printed by `wp-contrib approve`. You can also list your PRs with:

@@ -61,6 +61,7 @@ class WorkflowState:
     agent_report: str = ""
     validations: list[dict[str, Any]] = field(default_factory=list)
     pull_request_url: str = ""
+    agent_provider: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

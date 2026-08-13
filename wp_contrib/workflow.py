@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -72,6 +73,7 @@ def solve_issue(
         repository=issue.ref.full_name, issue_number=issue.ref.number, issue_url=issue.ref.url,
         issue_title=issue.title, workspace=str(workspace), branch=branch,
         workflow_status="agent_running", agent_status="running",
+        agent_provider=config.agent.provider,
     )
     save_state(state)
     result = None
@@ -113,6 +115,98 @@ def _must_succeed(command: list[str], cwd: Path | None = None, action: str = "Co
     return result.stdout.strip()
 
 
+def find_pr_template(workspace: Path) -> Path | None:
+    """Find a GitHub PR template using GitHub's standard locations."""
+    preferred = (
+        workspace / ".github" / "PULL_REQUEST_TEMPLATE.md",
+        workspace / "PULL_REQUEST_TEMPLATE.md",
+        workspace / "docs" / "PULL_REQUEST_TEMPLATE.md",
+    )
+    for expected in preferred:
+        if expected.parent.is_dir():
+            match = next(
+                (path for path in expected.parent.iterdir() if path.is_file() and path.name.lower() == expected.name.lower()),
+                None,
+            )
+            if match:
+                return match
+    directories = (workspace / ".github" / "PULL_REQUEST_TEMPLATE", workspace / "PULL_REQUEST_TEMPLATE")
+    candidates = sorted(
+        path for directory in directories if directory.is_dir()
+        for path in directory.iterdir() if path.is_file() and path.suffix.lower() == ".md"
+    )
+    return candidates[0] if candidates else None
+
+
+def _append_to_section(template: str, headings: set[str], content: str) -> tuple[str, bool]:
+    pattern = re.compile(r"(?im)^(#{1,6})\s+(.+?)\s*$")
+    matches = list(pattern.finditer(template))
+    for index, match in enumerate(matches):
+        normalized = re.sub(r"[^a-z]+", " ", match.group(2).lower()).strip()
+        if normalized not in headings:
+            continue
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(template)
+        return template[:end].rstrip() + f"\n\n{content}\n\n" + template[end:].lstrip(), True
+    return template, False
+
+
+def build_pr_body(state: WorkflowState, changed: str, tests: str, template: str = "") -> str:
+    summary = f"Fixes the reported issue: {state.issue_title}."
+    ai = (
+        f"AI assistance: Yes\n\nTool(s): {state.agent_provider or 'coding agent'}\n\n"
+        "Used for: Repository investigation, implementation, and test suggestions; "
+        "the final diff and validation were reviewed by the contributor."
+    )
+    if not template.strip():
+        return f"""## Summary
+
+{summary}
+
+## Changes
+
+```
+{changed}
+```
+
+## Testing
+
+{tests}
+
+## Use of AI Tools
+
+{ai}
+
+Fixes #{state.issue_number}
+"""
+    body = re.sub(
+        r"(?im)^([ \t]*(?:fixes|closes|resolves)[ \t]+)#?(?:[ \t]*<!--[ \t]*#?issue(?:-number)?[ \t]*-->)?[ \t]*$",
+        rf"\1#{state.issue_number}", template,
+    )
+    body, summary_added = _append_to_section(body, {"summary", "what", "description"}, summary)
+    body, why_added = _append_to_section(
+        body, {"why"}, f"Addresses the reported behavior in #{state.issue_number}."
+    )
+    body, changes_added = _append_to_section(body, {"changes", "how"}, f"```\n{changed}\n```")
+    body, tests_added = _append_to_section(
+        body, {"testing", "testing instructions", "tests"}, tests
+    )
+    body, ai_added = _append_to_section(body, {"use of ai tools", "ai disclosure"}, ai)
+    additions: list[str] = []
+    if not summary_added:
+        additions += ["## Summary", summary]
+    if not changes_added:
+        additions += ["## Changes", f"```\n{changed}\n```"]
+    if not tests_added:
+        additions += ["## Testing", tests]
+    if not ai_added:
+        additions += ["## Use of AI Tools", ai]
+    if not re.search(rf"(?im)\b(?:fixes|closes|resolves)\s+#?{state.issue_number}\b", body):
+        additions.append(f"Fixes #{state.issue_number}")
+    if additions:
+        body = body.rstrip() + "\n\n" + "\n\n".join(additions) + "\n"
+    return body
+
+
 def publish(state: WorkflowState, progress: Progress = _quiet) -> str:
     if state.approval_status != "approved":
         raise WorkflowError("Publishing is blocked until explicit approval.")
@@ -152,22 +246,13 @@ def publish(state: WorkflowState, progress: Progress = _quiet) -> str:
         ["gh", "repo", "view", state.repository, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
         action="Default branch lookup",
     )
-    body = f"""## Summary
-
-Fixes the reported issue: {state.issue_title}.
-
-## Changes
-
-```
-{changed}
-```
-
-## Testing
-
-{tests}
-
-Fixes #{state.issue_number}
-"""
+    template_path = find_pr_template(workspace)
+    if template_path:
+        progress(f"Using pull request template {template_path.relative_to(workspace)}")
+    else:
+        progress("No repository pull request template found; using the default body")
+    template = template_path.read_text() if template_path else ""
+    body = build_pr_body(state, changed, tests, template)
     progress("Creating the pull request on GitHub")
     url = _must_succeed([
         "gh", "pr", "create", "--repo", state.repository, "--head", f"{login}:{state.branch}",
