@@ -8,7 +8,8 @@ import typer
 
 from .commands import run_command
 from .config import ConfigError, load_config
-from .agent import AgentError
+from .agent import AgentError, agent_executable
+from .config import AgentConfig
 from .github import GitHubError, fetch_issue, parse_issue_url
 from .repository import RepositoryError
 from .reporter import render_report
@@ -27,10 +28,16 @@ def _die(message: str) -> None:
     raise typer.Exit(1)
 
 
-def check_environment(require_agent: bool = True) -> None:
+def check_environment(agent: AgentConfig | None = None) -> None:
     required = {"git": "https://git-scm.com/downloads", "gh": "https://cli.github.com/"}
-    if require_agent:
-        required["opencode"] = "https://opencode.ai/docs/"
+    if agent:
+        executable = agent_executable(agent)
+        install_url = (
+            "https://developers.openai.com/codex/cli/" if executable == "codex"
+            else "https://opencode.ai/docs/" if executable == "opencode"
+            else "the documentation for your configured agent"
+        )
+        required[executable] = install_url
     missing = [(name, url) for name, url in required.items() if shutil.which(name) is None]
     if sys.version_info < (3, 11):
         missing.append(("Python 3.11+", "https://www.python.org/downloads/"))
@@ -40,6 +47,10 @@ def check_environment(require_agent: bool = True) -> None:
     auth = run_command(["gh", "auth", "status"])
     if not auth.succeeded:
         _die("GitHub CLI is not authenticated. Run: gh auth login")
+    if agent and agent.provider.lower().strip() == "codex":
+        codex_auth = run_command(["codex", "login", "status"])
+        if not codex_auth.succeeded:
+            _die("Codex CLI is not authenticated. Run: codex login")
 
 
 @app.command()
@@ -49,7 +60,7 @@ def solve(issue_url: str) -> None:
         _configure_logging()
         config = load_config()
         ref = parse_issue_url(issue_url)
-        check_environment()
+        check_environment(config.agent)
         issue = fetch_issue(ref)
         if issue.state.upper() != "OPEN":
             _die(f"Issue #{ref.number} is {issue.state.lower()}; only open issues can be solved.")
@@ -97,19 +108,22 @@ def test_command() -> None:
 
 @app.command()
 def approve() -> None:
-    """Review, approve, push, and create a pull request."""
+    """Approve changes, then create or update the pull request."""
     try:
         state = load_state()
         typer.echo(render_report(state))
         typer.echo(f"\nBranch: {state.branch}")
         if state.validation_status != "passed":
             _die("Validation has not passed. Review failures and run 'wp-contrib test' again.")
-        if not typer.confirm("Approve these changes, commit them, push to your fork, and create the PR?", default=False):
+        action = "update the existing PR" if state.pull_request_url else "create the PR"
+        if not typer.confirm(f"Approve these changes, commit them, push to your fork, and {action}?", default=False):
             typer.echo("Not approved. Nothing was pushed.")
             raise typer.Exit()
         state.approval_status = "approved"
         save_state(state)
-        typer.echo(f"Pull request created: {publish(state)}")
+        url = publish(state)
+        verb = "updated" if state.workflow_status == "pr_updated" else "created"
+        typer.echo(f"Pull request {verb}: {url}")
     except (StateError, WorkflowError) as exc:
         _die(str(exc))
 

@@ -4,8 +4,12 @@ github:
   use_gh_cli: true
 
 agent:
+  # Supported providers: opencode, codex, custom
   provider: "opencode"
   max_attempts: 2
+  # For custom providers, use an argument list with exactly one or more
+  # {prompt} placeholders. Commands run directly without a shell.
+  # command: ["your-agent", "--non-interactive", "{prompt}"]
 
 validation:
   timeout: 300

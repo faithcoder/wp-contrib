@@ -20,6 +20,7 @@ class GithubConfig:
 class AgentConfig:
     provider: str = "opencode"
     max_attempts: int = 2
+    command: list[str] | None = None
 
 
 @dataclass(frozen=True)

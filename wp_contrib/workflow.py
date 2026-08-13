@@ -55,16 +55,16 @@ def solve_issue(issue: Issue, config: Config) -> tuple[WorkflowState, list[dict[
     last_error: AgentError | None = None
     for attempt in range(1, max(1, config.agent.max_attempts) + 1):
         try:
-            result = run_agent(issue, workspace)
+            result = run_agent(issue, workspace, config.agent)
             break
         except AgentError as exc:
             last_error = exc
-            log.warning("OpenCode attempt %s failed: %s", attempt, exc)
+            log.warning("Agent attempt %s failed: %s", attempt, exc)
     if result is None:
         state.agent_status = "failed"
         state.workflow_status = "agent_failed"
         save_state(state)
-        raise last_error or WorkflowError("OpenCode failed without an error message.")
+        raise last_error or WorkflowError("Coding agent failed without an error message.")
     state.agent_report = result.stdout
     state.agent_status = "completed"
     state.workflow_status = "validating"
@@ -98,6 +98,10 @@ def publish(state: WorkflowState) -> str:
     if "origin" not in remotes:
         _must_succeed(["git", "remote", "add", "origin", fork_url], workspace, "Fork remote setup")
     _must_succeed(["git", "push", "--set-upstream", "origin", state.branch], workspace, "Push")
+    if state.pull_request_url:
+        state.workflow_status = "pr_updated"
+        save_state(state)
+        return state.pull_request_url
     changed = _must_succeed(["git", "show", "--stat", "--oneline", "HEAD"], workspace, "Change summary")
     tests = "\n".join(
         f"- `{ ' '.join(item['command']) }`: {'passed' if item['returncode'] == 0 else 'failed'}"

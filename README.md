@@ -1,13 +1,13 @@
 # wp-contrib
 
-`wp-contrib` is a minimal local CLI for investigating and fixing open-source WordPress plugin issues. It performs Git, GitHub, validation, state, and publishing work deterministically. OpenCode is invoked once as the coding worker. Nothing is pushed and no pull request is created until you run `approve` and explicitly confirm.
+`wp-contrib` is a minimal local CLI for investigating and fixing open-source WordPress plugin issues. It performs Git, GitHub, validation, state, and publishing work deterministically. A configurable local coding agent is invoked once for code investigation and modification. Nothing is pushed and no pull request is created until you run `approve` and explicitly confirm.
 
 ## Prerequisites
 
 - Python 3.11 or newer
 - Git
 - [GitHub CLI](https://cli.github.com/)
-- [OpenCode](https://opencode.ai/docs/)
+- One supported coding agent: [OpenCode](https://opencode.ai/docs/), [Codex CLI](https://developers.openai.com/codex/cli/), or a compatible custom CLI
 
 Authenticate GitHub:
 
@@ -16,11 +16,19 @@ gh auth login
 gh auth status
 ```
 
-Install OpenCode using its current installation instructions, then configure a provider using OpenCode's own authentication flow. Confirm it works with:
+Install and authenticate the agent you want to use. For OpenCode, use its own setup instructions and confirm it works with:
 
 ```bash
 opencode --version
 opencode models
+```
+
+For Codex, install the Codex CLI, authenticate it, and verify the session:
+
+```bash
+codex login
+codex login status
+codex --version
 ```
 
 ## Installation
@@ -41,37 +49,221 @@ pytest
 
 Copy `config.example.yaml` to `config.yaml` to override defaults. `config.yaml`, local state, logs, environment files, and workspace contents are ignored by Git.
 
-## Workflow
+## Choose the coding agent
 
-Start work with:
+OpenCode is the default. To keep it, create `config.yaml` containing:
+
+```yaml
+agent:
+  provider: opencode
+  max_attempts: 2
+```
+
+To use Codex instead:
+
+```yaml
+agent:
+  provider: codex
+  max_attempts: 2
+```
+
+The Codex integration runs this non-interactive equivalent inside the cloned repository:
+
+```bash
+codex exec --sandbox workspace-write "TASK"
+```
+
+It does not use the dangerous sandbox/approval bypass option. Codex reads its existing local authentication and user configuration. The stable `codex exec` command and `workspace-write` sandbox are documented in the [official OpenAI Codex CLI reference](https://developers.openai.com/codex/cli/reference).
+
+For another local AI agent, configure a subprocess argument template:
+
+```yaml
+agent:
+  provider: custom
+  max_attempts: 2
+  command:
+    - your-agent-command
+    - --non-interactive
+    - "{prompt}"
+```
+
+The command must be installed and available on `PATH`. `{prompt}` is replaced with the compact issue task. Arguments are executed directly without a shell, so shell operators, pipes, aliases, and redirection are not interpreted. Adjust the arguments to the agent's documented non-interactive interface.
+
+## Step-by-step: first contribution
+
+Run these commands in your normal Terminal. You do not need to start Codex or OpenCode separately: `wp-contrib solve` starts the provider selected in `config.yaml` when coding work is needed.
+
+### 1. Open the project and activate Python
+
+Every time you open a new Terminal window:
+
+```bash
+cd /Users/arif/Downloads/wp-contrib
+source .venv/bin/activate
+```
+
+The prompt usually shows `(.venv)` after activation.
+
+### 2. Authenticate GitHub
+
+This is normally required only once:
+
+```bash
+gh auth login
+gh auth status
+```
+
+### 3. Confirm the required tools
+
+```bash
+python --version
+git --version
+gh --version
+# Run the one that you configured:
+opencode --version
+codex --version
+```
+
+Python must be version 3.11 or newer.
+
+### 4. Solve an issue
+
+Replace the URL with the open GitHub issue you want to fix:
 
 ```bash
 wp-contrib solve "https://github.com/owner/repository/issues/123"
-# or
+```
+
+For example:
+
+```bash
+wp-contrib solve "https://github.com/WordPress/two-factor/issues/956"
+```
+
+During application development, the equivalent command is:
+
+```bash
 python main.py solve "https://github.com/owner/repository/issues/123"
 ```
 
-The command validates prerequisites and authentication, retrieves the open issue, checks for potentially related open PRs, clones or verifies the repository under `workspaces/`, refuses a dirty tree, creates a sanitized issue branch, and runs one non-interactive OpenCode coding session. It then detects repository-provided Composer, PHPUnit, PHPCS, PHPStan, and npm validation and shows a review report.
+The command validates prerequisites and authentication, retrieves the open issue, checks for potentially related open PRs, clones or verifies the repository under `workspaces/`, refuses a dirty tree, creates a sanitized issue branch, and runs one non-interactive coding-agent session. It then detects repository-provided Composer, PHPUnit, PHPCS, PHPStan, and npm validation and shows a review report.
 
-OpenCode is told to inspect repository instructions, make the smallest safe fix, test it where practical, and never commit, push, or open a PR. Issue content is not sent to a model before this coding phase, and the repository itself is not embedded in the prompt.
+The selected agent is told to inspect repository instructions, make the smallest safe fix, test it where practical, and never commit, push, or open a PR. Issue content is not sent to a model before this coding phase, and the repository itself is not embedded in the prompt.
 
-Inspect and re-run deterministic work at any time:
+### 5. Review OpenCode's work
+
+After `solve` finishes, run each command separately:
 
 ```bash
 wp-contrib status
+```
+
+```bash
 wp-contrib diff
+```
+
+```bash
 wp-contrib test
 ```
 
-State is atomically persisted in `.wp-contrib-state.json`, so these commands survive restarting the CLI. Validation failures are reported and block approval.
+`status` shows the issue and workflow state. `diff` shows the actual uncommitted code changes without an AI summary. `test` reruns validation detected from the repository. Read the diff and test failures before continuing.
 
-After reviewing the raw diff and validation output:
+State is atomically persisted in `.wp-contrib-state.json`, so these commands still work after closing and reopening the CLI. Validation failures block approval.
+
+### 6. Approve and create the pull request
+
+Only after you are satisfied with the changes and validation:
 
 ```bash
 wp-contrib approve
 ```
 
-The command displays the issue, branch, changed files, and validation results, then asks for explicit confirmation. Only after confirmation does it stage and commit the changes, create or reuse your GitHub fork, configure `upstream` and `origin`, push without force, and create a PR against the upstream default branch. The PR description is generated from deterministic state and Git output.
+Review the summary one more time. At the confirmation prompt, type `y` only if you want to commit, push to your fork, and create the PR. Typing `n` leaves everything local.
+
+Only after confirmation does the command stage and commit changes, create or reuse your GitHub fork, configure `upstream` and `origin`, push without force, and create a PR against the upstream default branch. The PR description is generated from deterministic state and Git output.
+
+### 7. Check the pull request
+
+Open the URL printed by `wp-contrib approve`. You can also list your PRs with:
+
+```bash
+gh pr status
+```
+
+Do not delete the local workspace or issue branch while the PR is under review.
+
+## Responding to pull-request feedback
+
+A PR commonly needs one or more revisions. Keep using the same local workspace and branch. Do not run `wp-contrib solve` again for the same issue, because the workflow and branch already exist.
+
+### 1. Read and copy the feedback
+
+Read the review on GitHub. To inspect it from Terminal, use the PR number shown in the PR URL:
+
+```bash
+gh pr view PR_NUMBER --repo owner/repository --comments
+```
+
+### 2. Ask your selected agent to make the requested revision
+
+Move into the cloned repository. For issue `956` in `WordPress/two-factor`, that is:
+
+```bash
+cd /Users/arif/Downloads/wp-contrib/workspaces/two-factor
+```
+
+If your provider is OpenCode, run one focused task containing the reviewer feedback:
+
+```bash
+opencode run "Address the following review feedback on the current PR. Read AGENTS.md and CONTRIBUTING.md if present, inspect the existing branch and diff, make only the requested changes, update tests when appropriate, run relevant tests, and do not commit, push, or create a PR. Reviewer feedback: PASTE_FEEDBACK_HERE"
+```
+
+If your provider is Codex, run:
+
+```bash
+codex exec --sandbox workspace-write "Address the following review feedback on the current PR. Read AGENTS.md and CONTRIBUTING.md if present, inspect the existing branch and diff, make only the requested changes, update tests when appropriate, run relevant tests, and do not commit, push, or create a PR. Reviewer feedback: PASTE_FEEDBACK_HERE"
+```
+
+For a custom provider, use the same focused task with that tool's non-interactive command. This manual revision step does not change the provider stored in `config.yaml`.
+
+You can also edit the files yourself instead of using OpenCode.
+
+### 3. Return to wp-contrib and review again
+
+```bash
+cd /Users/arif/Downloads/wp-contrib
+source .venv/bin/activate
+```
+
+Then repeat the review commands:
+
+```bash
+wp-contrib status
+```
+
+```bash
+wp-contrib diff
+```
+
+```bash
+wp-contrib test
+```
+
+### 4. Approve the revision
+
+If the new diff is correct and validation passes:
+
+```bash
+wp-contrib approve
+```
+
+Confirm with `y`. Because the workflow already contains a PR URL, `wp-contrib` commits and pushes the revision to the same branch and updates the existing PR. It does not create a second PR. GitHub automatically adds the new commit to the open PR.
+
+Repeat this feedback → edit → diff → test → approve cycle until the PR is accepted.
+
+If the maintainer requests a rebase or the upstream branch has moved significantly, handle that carefully inside the workspace. Never force-push unless the project maintainer explicitly requires it; `wp-contrib` itself never force-pushes.
+
+## Stop or abandon local work
 
 To stop without deleting the workspace or branch:
 
@@ -83,7 +275,7 @@ wp-contrib abort
 
 - Existing repositories, branches, and uncommitted changes are never deleted or overwritten.
 - There is no force push and no automatic dependency installation.
-- `gh` uses credentials established by `gh auth login`; OpenCode uses its own configuration. Secrets are not read into application state or logs.
+- `gh` uses credentials established by `gh auth login`; OpenCode, Codex, or the custom agent uses its own local authentication. Secrets are not read into application state or logs.
 - If a tool is missing, the CLI prints its installation URL. If GitHub access fails, run `gh auth status` and verify repository access.
 - If validation reports a missing executable such as `vendor/bin/phpunit`, install the repository's dependencies according to its `CONTRIBUTING.md` or `README.md`, then run `wp-contrib test`.
-- If OpenCode fails or times out, its actionable error is shown and state remains available for inspection. No publishing occurs.
+- If the coding agent fails or times out, its actionable error is shown and state remains available for inspection. No publishing occurs.
