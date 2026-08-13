@@ -32,3 +32,26 @@ def test_publish_updates_existing_pr_without_creating_another(monkeypatch, tmp_p
     assert publish(state) == state.pull_request_url
     assert state.workflow_status == "pr_updated"
     assert not any(command[:3] == ["gh", "pr", "create"] for command in commands)
+
+
+def test_publish_emits_progress(monkeypatch, tmp_path) -> None:
+    state = WorkflowState(
+        "owner/repo", 12, "issue-url", str(tmp_path), "fix/12-bug",
+        issue_title="Bug", approval_status="approved", pull_request_url="https://example/pr/1",
+    )
+
+    def fake_command(command, cwd=None, action="Command"):
+        if command[:3] == ["git", "status", "--porcelain"]:
+            return " M file.php"
+        if command == ["gh", "api", "user", "--jq", ".login"]:
+            return "contributor"
+        if command == ["git", "remote"]:
+            return "origin\nupstream"
+        return ""
+
+    messages: list[str] = []
+    monkeypatch.setattr("wp_contrib.workflow._must_succeed", fake_command)
+    monkeypatch.setattr("wp_contrib.workflow.save_state", lambda state: None)
+    publish(state, messages.append)
+    assert "Staging changes" in messages
+    assert "Existing pull request updated" in messages

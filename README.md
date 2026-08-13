@@ -2,6 +2,8 @@
 
 `wp-contrib` is a minimal local CLI for investigating and fixing open-source WordPress plugin issues. It performs Git, GitHub, validation, state, and publishing work deterministically. A configurable local coding agent is invoked once for code investigation and modification. Nothing is pushed and no pull request is created until you run `approve` and explicitly confirm.
 
+[View the contribution portfolio](CONTRIBUTIONS.md)
+
 ## Prerequisites
 
 - Python 3.11 or newer
@@ -152,7 +154,7 @@ The selected agent is told to inspect repository instructions, make the smallest
 
 ### While the coding agent is running
 
-The current version captures the agent's output, so the original Terminal may look quiet while Codex or OpenCode investigates and edits the repository. This can be normal. An agent may inspect files for several minutes before creating a visible diff.
+The CLI prints each workflow milestone as it happens: configuration and authentication checks, issue retrieval, duplicate-PR search, workspace preparation, branch creation, repository-instruction discovery, agent start/finish, validation, and human-review readiness. During the coding-agent step, the agent's detailed output is captured, so there may still be a quiet period after the `Calling codex coding agent` or `Calling opencode coding agent` message. This can be normal; an agent may inspect files for several minutes before creating a visible diff.
 
 Open a second Terminal window and check the saved workflow state:
 
@@ -334,7 +336,23 @@ Every refresh also creates a standalone local dashboard page:
 /Users/arif/Downloads/wp-contrib/CONTRIBUTIONS.md
 ```
 
-The page contains a Markdown statistics grid and the complete PR list with GitHub links. It is generated data, ignored by Git, and overwritten on each refresh.
+The page contains a Markdown statistics grid and the complete PR list with GitHub links. It is generated data and overwritten on each refresh. Unlike private cache and state files, `CONTRIBUTIONS.md` is tracked by Git so it can serve as a portfolio page.
+
+After refreshing, commit and push the dashboard in this `wp-contrib` repository:
+
+```bash
+git add CONTRIBUTIONS.md
+git commit -m "Update contribution portfolio"
+git push origin main
+```
+
+With this repository hosted at `https://github.com/faithcoder/wp-contrib`, the public portfolio URL is:
+
+```text
+https://github.com/faithcoder/wp-contrib/blob/main/CONTRIBUTIONS.md
+```
+
+GitHub renders the statistics and PR table directly on that page. Refresh and commit it again whenever you want the public portfolio to show newer GitHub data. The local cache `.wp-contrib-contributions.json` remains ignored and must not be committed.
 
 Show the cached dashboard without contacting GitHub:
 

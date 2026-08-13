@@ -6,7 +6,6 @@ __pycache__/
 config.yaml
 .wp-contrib-state.json
 .wp-contrib-contributions.json
-CONTRIBUTIONS.md
 wp-contrib.log
 workspaces/*
 !workspaces/.gitkeep

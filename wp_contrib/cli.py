@@ -37,6 +37,10 @@ def _die(message: str) -> None:
     raise typer.Exit(1)
 
 
+def _progress(message: str) -> None:
+    typer.secho(f"  ✓ {message}", fg=typer.colors.CYAN)
+
+
 def check_environment(agent: AgentConfig | None = None) -> None:
     required = {"git": "https://git-scm.com/downloads", "gh": "https://cli.github.com/"}
     if agent:
@@ -67,13 +71,20 @@ def solve(issue_url: str) -> None:
     """Start or resume work on a GitHub issue."""
     try:
         _configure_logging()
+        typer.secho("wp-contrib workflow", bold=True)
         config = load_config()
+        _progress("Configuration loaded")
         ref = parse_issue_url(issue_url)
+        _progress(f"Issue URL parsed: {ref.full_name}#{ref.number}")
         check_environment(config.agent)
+        _progress("Git, GitHub CLI, authentication, and coding agent are ready")
+        _progress("Retrieving issue details from GitHub")
         issue = fetch_issue(ref)
+        _progress(f"Issue found: {issue.title}")
         if issue.state.upper() != "OPEN":
             _die(f"Issue #{ref.number} is {issue.state.lower()}; only open issues can be solved.")
-        state, linked_prs = solve_issue(issue, config)
+        _progress("Issue is open")
+        state, linked_prs = solve_issue(issue, config, _progress)
     except (ConfigError, GitHubError, RepositoryError, AgentError, WorkflowError) as exc:
         _die(str(exc))
     if linked_prs:
@@ -109,7 +120,7 @@ def show_diff() -> None:
 def test_command() -> None:
     """Run detected validation for the active workspace."""
     try:
-        state = validate_state(load_state(), load_config())
+        state = validate_state(load_state(), load_config(), _progress)
         typer.echo(render_report(state))
     except (StateError, ConfigError) as exc:
         _die(str(exc))
@@ -130,7 +141,8 @@ def approve() -> None:
             raise typer.Exit()
         state.approval_status = "approved"
         save_state(state)
-        url = publish(state)
+        typer.secho("\nPublishing workflow", bold=True)
+        url = publish(state, _progress)
         verb = "updated" if state.workflow_status == "pr_updated" else "created"
         typer.echo(f"Pull request {verb}: {url}")
     except (StateError, WorkflowError) as exc:
