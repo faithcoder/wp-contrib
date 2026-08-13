@@ -150,7 +150,51 @@ The command validates prerequisites and authentication, retrieves the open issue
 
 The selected agent is told to inspect repository instructions, make the smallest safe fix, test it where practical, and never commit, push, or open a PR. Issue content is not sent to a model before this coding phase, and the repository itself is not embedded in the prompt.
 
-### 5. Review OpenCode's work
+### While the coding agent is running
+
+The current version captures the agent's output, so the original Terminal may look quiet while Codex or OpenCode investigates and edits the repository. This can be normal. An agent may inspect files for several minutes before creating a visible diff.
+
+Open a second Terminal window and check the saved workflow state:
+
+```bash
+cd /Users/arif/Downloads/wp-contrib
+source .venv/bin/activate
+wp-contrib status
+```
+
+Check whether an agent process is running:
+
+```bash
+ps aux | grep -E "codex exec|opencode run"
+```
+
+Inspect the workspace directly without changing anything:
+
+```bash
+cd /Users/arif/Downloads/wp-contrib/workspaces/REPOSITORY_NAME
+git status --short
+git diff
+```
+
+Do not run another `wp-contrib solve` for the same issue while the first command is still running. Do not interrupt the agent merely because the diff is initially empty.
+
+### Why `wp-contrib solve` should run from Terminal
+
+For the normal issue workflow, run `wp-contrib solve` directly in your regular Terminal:
+
+```text
+Terminal → wp-contrib → configured coding agent
+```
+
+Do not open Codex or OpenCode first and ask it to execute `wp-contrib solve`. That creates a nested workflow:
+
+```text
+Coding agent → wp-contrib → another coding-agent process
+```
+
+Nesting can cause confusing permissions, duplicate agent sessions, and unnecessary token usage. Start an agent directly only when revising an already-created PR or doing deliberate manual work inside its existing workspace.
+
+### 5. Review the coding agent's work
 
 After `solve` finishes, run each command separately:
 
@@ -226,7 +270,7 @@ codex exec --sandbox workspace-write "Address the following review feedback on t
 
 For a custom provider, use the same focused task with that tool's non-interactive command. This manual revision step does not change the provider stored in `config.yaml`.
 
-You can also edit the files yourself instead of using OpenCode.
+You can also edit the files yourself instead of using an AI agent.
 
 ### 3. Return to wp-contrib and review again
 
@@ -262,6 +306,63 @@ Confirm with `y`. Because the workflow already contains a PR URL, `wp-contrib` c
 Repeat this feedback → edit → diff → test → approve cycle until the PR is accepted.
 
 If the maintainer requests a rebase or the upstream branch has moved significantly, handle that carefully inside the workspace. Never force-push unless the project maintainer explicitly requires it; `wp-contrib` itself never force-pushes.
+
+## Tracking all contributions
+
+The contribution dashboard discovers pull requests authored by your authenticated GitHub account. It does not use an AI agent or consume model tokens.
+
+Authenticate GitHub first:
+
+```bash
+gh auth login
+gh auth status
+```
+
+Fetch the latest PR data and display the terminal dashboard:
+
+```bash
+cd /Users/arif/Downloads/wp-contrib
+source .venv/bin/activate
+wp-contrib prs --refresh
+```
+
+The top grid shows total, open, draft, needs-attention, merged, and closed counts. The list below shows repository, PR number, title, status, review or feedback state, checks, and last update. PR numbers are clickable in supported terminals.
+
+Every refresh also creates a standalone local dashboard page:
+
+```text
+/Users/arif/Downloads/wp-contrib/CONTRIBUTIONS.md
+```
+
+The page contains a Markdown statistics grid and the complete PR list with GitHub links. It is generated data, ignored by Git, and overwritten on each refresh.
+
+Show the cached dashboard without contacting GitHub:
+
+```bash
+wp-contrib prs
+```
+
+Refresh automatically while the Terminal remains open:
+
+```bash
+wp-contrib prs --watch
+```
+
+Watch mode refreshes every five minutes by default. Choose another interval of at least 30 seconds:
+
+```bash
+wp-contrib prs --watch --interval 60
+```
+
+Stop watch mode with `Ctrl-C`. You can limit how many recently updated authored PRs are tracked:
+
+```bash
+wp-contrib prs --refresh --limit 250
+```
+
+On the first refresh, existing comments and reviews establish the baseline. Later refreshes label a PR `New feedback` when its combined review/comment count increases. A persistent `Changes requested` review decision remains in the needs-attention count. Check results are summarized as passing, pending, failing, not configured, or unknown.
+
+Watch mode is automatic only while its Terminal process is running. When `wp-contrib` is closed, nothing runs in the background. GitHub notifications remain the source for immediate email/mobile alerts; a future optional macOS `launchd` or Linux systemd timer can provide background refresh and desktop notifications without adding a permanent application server.
 
 ## Stop or abandon local work
 

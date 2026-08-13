@@ -3,16 +3,25 @@ from __future__ import annotations
 import logging
 import shutil
 import sys
+import time
 
 import typer
 
 from .commands import run_command
+from .contributions import (
+    CACHE_FILE,
+    PAGE_FILE,
+    ContributionsError,
+    load_contributions,
+    refresh_contributions,
+    write_contributions_page,
+)
 from .config import ConfigError, load_config
 from .agent import AgentError, agent_executable
 from .config import AgentConfig
 from .github import GitHubError, fetch_issue, parse_issue_url
 from .repository import RepositoryError
-from .reporter import render_report
+from .reporter import print_contributions, render_report
 from .state import StateError, load_state, save_state
 from .workflow import WorkflowError, publish, solve_issue, validate_state
 
@@ -139,3 +148,35 @@ def abort() -> None:
         typer.echo("Workflow marked aborted. Repository files and branch were not deleted.")
     except StateError as exc:
         _die(str(exc))
+
+
+@app.command()
+def prs(
+    refresh: bool = typer.Option(False, "--refresh", help="Fetch current PR data from GitHub."),
+    watch: bool = typer.Option(False, "--watch", help="Continuously refresh until Ctrl-C."),
+    interval: int = typer.Option(300, "--interval", min=30, help="Watch refresh interval in seconds."),
+    limit: int = typer.Option(100, "--limit", min=1, max=1000, help="Maximum authored PRs to track."),
+) -> None:
+    """Show the contribution dashboard and generate CONTRIBUTIONS.md."""
+    try:
+        check_environment()
+        first = True
+        while True:
+            cached = load_contributions()
+            items = refresh_contributions(limit) if refresh or watch or not cached else cached
+            write_contributions_page(items)
+            if watch and not first:
+                typer.clear()
+            print_contributions(items)
+            typer.echo(f"\nDashboard page: {PAGE_FILE.resolve()}")
+            if not watch:
+                if not refresh and cached:
+                    typer.echo("Cached data shown. Run 'wp-contrib prs --refresh' for GitHub updates.")
+                break
+            typer.echo(f"Refreshing every {interval} seconds. Press Ctrl-C to stop.")
+            first = False
+            time.sleep(interval)
+    except ContributionsError as exc:
+        _die(str(exc))
+    except KeyboardInterrupt:
+        typer.echo("\nStopped watching pull requests.")

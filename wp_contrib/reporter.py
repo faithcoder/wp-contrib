@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+from rich.columns import Columns
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
 from .commands import run_command
+from .contributions import Contribution, contribution_stats
 from .models import WorkflowState
 
 
@@ -35,3 +41,40 @@ def render_report(state: WorkflowState) -> str:
     lines += ["", "Git", "─" * 40, diff_stat(state) or "No diff", "", "Status", "─" * 40]
     lines.append("READY FOR HUMAN REVIEW" if state.validation_status == "passed" else "VALIDATION FAILED\n\nReview the failure before continuing.")
     return "\n".join(lines)
+
+
+def print_contributions(items: list[Contribution], console: Console | None = None) -> None:
+    output = console or Console()
+    stats = contribution_stats(items)
+    cards = [
+        Panel(str(stats[key]), title=label, expand=True)
+        for key, label in (
+            ("total", "Total"), ("open", "Open"), ("draft", "Draft"),
+            ("feedback", "Needs attention"), ("merged", "Merged"), ("closed", "Closed"),
+        )
+    ]
+    output.print(Columns(cards, equal=True, expand=True))
+    table = Table(title="Pull requests", expand=True, show_lines=False)
+    table.add_column("Repository", style="cyan", no_wrap=True)
+    table.add_column("PR", justify="right")
+    table.add_column("Title", overflow="fold")
+    table.add_column("Status")
+    table.add_column("Review / feedback")
+    table.add_column("Checks")
+    table.add_column("Updated", no_wrap=True)
+    for item in items:
+        status_style = "green" if item.display_status == "Merged" else "yellow" if item.display_status in {"Open", "Draft"} else "dim"
+        feedback_style = "bold red" if item.feedback in {"New feedback", "Changes requested"} else "green" if item.feedback == "Approved" else ""
+        checks_style = "red" if item.checks == "Failing" else "yellow" if item.checks == "Pending" else "green" if item.checks == "Passing" else "dim"
+        table.add_row(
+            item.repository,
+            f"[link={item.url}]#{item.number}[/link]",
+            item.title,
+            f"[{status_style}]{item.display_status}[/{status_style}]",
+            f"[{feedback_style}]{item.feedback}[/{feedback_style}]" if feedback_style else item.feedback,
+            f"[{checks_style}]{item.checks}[/{checks_style}]",
+            item.updated_at[:10] or "—",
+        )
+    if not items:
+        table.add_row("—", "—", "No contributions found", "—", "—", "—", "—")
+    output.print(table)
