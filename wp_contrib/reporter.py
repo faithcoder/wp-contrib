@@ -56,6 +56,7 @@ def print_contributions(items: list[Contribution], console: Console | None = Non
     output.print(Columns(cards, equal=True, expand=True))
     table = Table(title="Pull requests", expand=True, show_lines=False)
     table.add_column("Repository", style="cyan", no_wrap=True)
+    table.add_column("Issue", justify="right", no_wrap=True)
     table.add_column("PR", justify="right")
     table.add_column("Title", overflow="fold")
     table.add_column("Status")
@@ -66,8 +67,12 @@ def print_contributions(items: list[Contribution], console: Console | None = Non
         status_style = "green" if item.display_status == "Merged" else "yellow" if item.display_status in {"Open", "Draft"} else "dim"
         feedback_style = "bold red" if item.feedback in {"New feedback", "Changes requested"} else "green" if item.feedback == "Approved" else ""
         checks_style = "red" if item.checks == "Failing" else "yellow" if item.checks == "Pending" else "green" if item.checks == "Passing" else "dim"
+        issue_links = " ".join(
+            f"[link={issue['url']}]#{issue['number']}[/link]" for issue in item.issues
+        ) or "—"
         table.add_row(
-            item.repository,
+            f"[link=https://github.com/{item.repository}]{item.repository}[/link]",
+            issue_links,
             f"[link={item.url}]#{item.number}[/link]",
             item.title,
             f"[{status_style}]{item.display_status}[/{status_style}]",
@@ -76,5 +81,5 @@ def print_contributions(items: list[Contribution], console: Console | None = Non
             item.updated_at[:10] or "—",
         )
     if not items:
-        table.add_row("—", "—", "No contributions found", "—", "—", "—", "—")
+        table.add_row("—", "—", "—", "No contributions found", "—", "—", "—", "—")
     output.print(table)

@@ -31,11 +31,14 @@ def test_stats_classify_prs() -> None:
 
 
 def test_markdown_has_stats_grid_and_list() -> None:
-    page = render_markdown([contribution()])
+    page = render_markdown([contribution(issues=[{
+        "number": 42, "title": "Reported bug", "url": "https://github.com/owner/repo/issues/42",
+    }])])
     assert "| Total | Open | Draft | Needs attention | Merged | Closed |" in page
     assert "[#[" not in page
     assert "[#1](https://example/pr/1)" in page
-    assert "owner/repo" in page
+    assert "[owner/repo](https://github.com/owner/repo)" in page
+    assert "[#42](https://github.com/owner/repo/issues/42)" in page
 
 
 def test_refresh_detects_new_feedback(monkeypatch, tmp_path) -> None:
@@ -49,6 +52,9 @@ def test_refresh_detects_new_feedback(monkeypatch, tmp_path) -> None:
     detail = {
         "state": "OPEN", "isDraft": False, "mergedAt": None, "reviewDecision": "CHANGES_REQUESTED",
         "statusCheckRollup": [{"conclusion": "SUCCESS"}], "comments": [{}], "reviews": [{}],
+        "closingIssuesReferences": [{
+            "number": 42, "title": "Reported bug", "url": "https://github.com/owner/repo/issues/42",
+        }],
     }
     responses = iter([
         CommandResult(["gh"], 0, json.dumps(search), "", 0.1),
@@ -59,3 +65,4 @@ def test_refresh_detects_new_feedback(monkeypatch, tmp_path) -> None:
     assert items[0].has_new_feedback
     assert items[0].checks == "Passing"
     assert items[0].feedback == "New feedback"
+    assert items[0].issues[0]["number"] == 42

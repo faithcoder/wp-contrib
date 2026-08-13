@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,7 @@ class Contribution:
     updated_at: str
     merged_at: str | None = None
     closed_at: str | None = None
+    issues: list[dict[str, object]] = field(default_factory=list)
 
     @property
     def display_status(self) -> str:
@@ -109,6 +110,22 @@ def _feedback_count(detail: dict[str, object], search: dict[str, object]) -> int
     ) + (len(reviews) if isinstance(reviews, list) else 0)
 
 
+def _issues(detail: dict[str, object]) -> list[dict[str, object]]:
+    references = detail.get("closingIssuesReferences")
+    if not isinstance(references, list):
+        return []
+    issues: list[dict[str, object]] = []
+    for reference in references:
+        if not isinstance(reference, dict) or not reference.get("url") or not reference.get("number"):
+            continue
+        issues.append({
+            "number": int(reference["number"]),
+            "title": str(reference.get("title") or ""),
+            "url": str(reference["url"]),
+        })
+    return issues
+
+
 def refresh_contributions(limit: int = 100, cache_path: Path = CACHE_FILE) -> list[Contribution]:
     previous = {(item.repository, item.number): item for item in load_contributions(cache_path)}
     fields = "repository,number,title,url,state,isDraft,updatedAt,closedAt,commentsCount"
@@ -127,7 +144,7 @@ def refresh_contributions(limit: int = 100, cache_path: Path = CACHE_FILE) -> li
     if not isinstance(results, list):
         raise ContributionsError("GitHub CLI returned unexpected PR search data.")
     items: list[Contribution] = []
-    detail_fields = "state,isDraft,mergedAt,reviewDecision,statusCheckRollup,comments,reviews"
+    detail_fields = "state,isDraft,mergedAt,reviewDecision,statusCheckRollup,comments,reviews,closingIssuesReferences"
     for result in results:
         if not isinstance(result, dict):
             continue
@@ -159,6 +176,7 @@ def refresh_contributions(limit: int = 100, cache_path: Path = CACHE_FILE) -> li
             updated_at=str(result.get("updatedAt") or ""),
             merged_at=str(detail["mergedAt"]) if detail.get("mergedAt") else None,
             closed_at=str(result["closedAt"]) if result.get("closedAt") else None,
+            issues=_issues(detail),
         ))
     save_contributions(items, cache_path)
     return items
@@ -194,17 +212,21 @@ def render_markdown(items: list[Contribution]) -> str:
         "|---:|---:|---:|---:|---:|---:|",
         f"| {stats['total']} | {stats['open']} | {stats['draft']} | {stats['feedback']} | {stats['merged']} | {stats['closed']} |",
         "", "## Pull requests", "",
-        "| Repository | PR | Title | Status | Review / feedback | Checks | Updated |",
-        "|---|---:|---|---|---|---|---|",
+        "| Repository | Issue | PR | Title | Status | Review / feedback | Checks | Updated |",
+        "|---|---|---:|---|---|---|---|---|",
     ]
     for item in items:
         title = item.title.replace("|", "\\|").replace("\n", " ")
+        repository_url = f"https://github.com/{item.repository}"
+        issue_links = ", ".join(
+            f"[#{issue['number']}]({issue['url']})" for issue in item.issues
+        ) or "—"
         lines.append(
-            f"| {item.repository} | [#{item.number}]({item.url}) | {title} | "
+            f"| [{item.repository}]({repository_url}) | {issue_links} | [#{item.number}]({item.url}) | {title} | "
             f"{item.display_status} | {item.feedback} | {item.checks} | {_date(item.updated_at)} |"
         )
     if not items:
-        lines.append("| — | — | No contributions found | — | — | — | — |")
+        lines.append("| — | — | — | No contributions found | — | — | — | — |")
     return "\n".join(lines) + "\n"
 
 

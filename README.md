@@ -326,7 +326,7 @@ source .venv/bin/activate
 wp-contrib prs --refresh
 ```
 
-The top grid shows total, open, draft, needs-attention, merged, and closed counts. The list below shows repository, PR number, title, status, review or feedback state, checks, and last update. PR numbers are clickable in supported terminals.
+The top grid shows total, open, draft, needs-attention, merged, and closed counts. The list below shows clickable repository, linked issue, PR number, title, status, review or feedback state, checks, and last update. Repository, issue, and PR links are clickable in supported terminals. If a PR does not formally reference an issue through GitHub's closing-issue mechanism, the issue column shows `—` rather than guessing from arbitrary text.
 
 Every refresh also creates a standalone local dashboard page:
 
